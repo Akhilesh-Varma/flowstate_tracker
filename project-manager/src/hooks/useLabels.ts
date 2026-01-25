@@ -100,19 +100,45 @@ export function useLabels() {
   const addLabel = async (name: string, color: string) => {
     if (!user) return;
 
-    const { error } = await supabase.from('labels').insert({
-      user_id: user.id,
+    // Optimistic update
+    const tempId = `temp-${Date.now()}`;
+    const optimisticLabel: Label = {
+      id: tempId,
       name,
       color,
-    });
+    };
+    setLabels((prev) => [...prev, optimisticLabel]);
+
+    const { data: newLabel, error } = await supabase
+      .from('labels')
+      .insert({
+        user_id: user.id,
+        name,
+        color,
+      })
+      .select()
+      .single();
 
     if (error) {
       console.error('Error adding label:', error);
+      // Revert optimistic update on error
+      setLabels((prev) => prev.filter((l) => l.id !== tempId));
+    } else if (newLabel) {
+      // Replace temp label with real one
+      setLabels((prev) =>
+        prev.map((l) => (l.id === tempId ? rowToLabel(newLabel as LabelRow) : l))
+      );
     }
   };
 
   const deleteLabel = async (id: string) => {
     if (!user) return;
+
+    // Store previous state for rollback
+    const previousLabels = labels;
+
+    // Optimistic update
+    setLabels((prev) => prev.filter((l) => l.id !== id));
 
     const { error } = await supabase
       .from('labels')
@@ -122,6 +148,8 @@ export function useLabels() {
 
     if (error) {
       console.error('Error deleting label:', error);
+      // Revert on error
+      setLabels(previousLabels);
     }
   };
 

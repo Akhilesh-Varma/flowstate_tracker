@@ -80,14 +80,35 @@ export function useTodos() {
   const addTodo = async (text: string) => {
     if (!user) return;
 
-    const { error } = await supabase.from('todos').insert({
-      user_id: user.id,
+    // Optimistic update
+    const tempId = `temp-${Date.now()}`;
+    const optimisticTodo: TodoItem = {
+      id: tempId,
       text,
       completed: false,
-    });
+      createdAt: Date.now(),
+    };
+    setTodos((prev) => [...prev, optimisticTodo]);
+
+    const { data: newTodo, error } = await supabase
+      .from('todos')
+      .insert({
+        user_id: user.id,
+        text,
+        completed: false,
+      })
+      .select()
+      .single();
 
     if (error) {
       console.error('Error adding todo:', error);
+      // Revert optimistic update on error
+      setTodos((prev) => prev.filter((t) => t.id !== tempId));
+    } else if (newTodo) {
+      // Replace temp todo with real one
+      setTodos((prev) =>
+        prev.map((t) => (t.id === tempId ? rowToTodo(newTodo as TodoRow) : t))
+      );
     }
   };
 
@@ -97,6 +118,14 @@ export function useTodos() {
     const todo = todos.find((t) => t.id === id);
     if (!todo) return;
 
+    // Store previous state for rollback
+    const previousTodos = todos;
+
+    // Optimistic update
+    setTodos((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
+    );
+
     const { error } = await supabase
       .from('todos')
       .update({ completed: !todo.completed })
@@ -105,11 +134,19 @@ export function useTodos() {
 
     if (error) {
       console.error('Error toggling todo:', error);
+      // Revert on error
+      setTodos(previousTodos);
     }
   };
 
   const deleteTodo = async (id: string) => {
     if (!user) return;
+
+    // Store previous state for rollback
+    const previousTodos = todos;
+
+    // Optimistic update
+    setTodos((prev) => prev.filter((t) => t.id !== id));
 
     const { error } = await supabase
       .from('todos')
@@ -119,6 +156,8 @@ export function useTodos() {
 
     if (error) {
       console.error('Error deleting todo:', error);
+      // Revert on error
+      setTodos(previousTodos);
     }
   };
 

@@ -96,23 +96,56 @@ export function useTasks() {
   }) => {
     if (!user) return;
 
-    const { error } = await supabase.from('tasks').insert({
-      user_id: user.id,
+    // Optimistic update
+    const tempId = `temp-${Date.now()}`;
+    const optimisticTask: Task = {
+      id: tempId,
       title: data.title,
       status: data.status,
-      priority: data.priority ?? null,
-      due_date: data.dueDate ? new Date(data.dueDate).toISOString() : null,
-      label_ids: data.labelIds ?? [],
+      priority: data.priority,
+      dueDate: data.dueDate,
+      labelIds: data.labelIds ?? [],
+      createdAt: Date.now(),
       order: tasks.length,
-    });
+    };
+    setTasks((prev) => [...prev, optimisticTask]);
+
+    const { data: newTask, error } = await supabase
+      .from('tasks')
+      .insert({
+        user_id: user.id,
+        title: data.title,
+        status: data.status,
+        priority: data.priority ?? null,
+        due_date: data.dueDate ? new Date(data.dueDate).toISOString() : null,
+        label_ids: data.labelIds ?? [],
+        order: tasks.length,
+      })
+      .select()
+      .single();
 
     if (error) {
       console.error('Error adding task:', error);
+      // Revert optimistic update on error
+      setTasks((prev) => prev.filter((t) => t.id !== tempId));
+    } else if (newTask) {
+      // Replace temp task with real one
+      setTasks((prev) =>
+        prev.map((t) => (t.id === tempId ? rowToTask(newTask as TaskRow) : t))
+      );
     }
   };
 
   const updateTask = async (id: string, updates: Partial<Task>) => {
     if (!user) return;
+
+    // Store previous state for rollback
+    const previousTasks = tasks;
+
+    // Optimistic update
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
+    );
 
     const dbUpdates: Record<string, unknown> = {};
     if (updates.title !== undefined) dbUpdates.title = updates.title;
@@ -133,11 +166,19 @@ export function useTasks() {
 
     if (error) {
       console.error('Error updating task:', error);
+      // Revert on error
+      setTasks(previousTasks);
     }
   };
 
   const deleteTask = async (id: string) => {
     if (!user) return;
+
+    // Store previous state for rollback
+    const previousTasks = tasks;
+
+    // Optimistic update
+    setTasks((prev) => prev.filter((t) => t.id !== id));
 
     const { error } = await supabase
       .from('tasks')
@@ -147,6 +188,8 @@ export function useTasks() {
 
     if (error) {
       console.error('Error deleting task:', error);
+      // Revert on error
+      setTasks(previousTasks);
     }
   };
 
