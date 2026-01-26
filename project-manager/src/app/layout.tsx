@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vibe Board",
-  description: "Project management for vibe coders",
+  title: "FlowState Tracker",
+  description: "Project management for focused productivity",
 };
 
 export default function RootLayout({
@@ -27,6 +27,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+        suppressHydrationWarning
       >
         <AuthProvider>{children}</AuthProvider>
       </body>
